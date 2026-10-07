@@ -1,36 +1,43 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# XOANA 前端
 
-## Getting Started
+Next.js 16 App Router、React 19、TypeScript、Tailwind CSS v4。包含商品展示、购物车、模拟支付和后台管理，支持中文与英文。
 
-First, run the development server:
+## 开发
+
+需要 Node.js >= 20.9 和项目固定的 pnpm 10.23.0。在本目录执行：
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+corepack pnpm install --frozen-lockfile
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+将 `.env.example` 复制为 `.env.local`，配置 `NEXT_PUBLIC_API_URL`（默认 `http://localhost:8080`）。该变量会进入浏览器代码，不能包含密码或 JWT 密钥；修改后重启开发服务，生产环境重新构建。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+在 `../backend` 启动后端，再启动前端：
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+corepack pnpm dev
+```
 
-## Learn More
+浏览器访问 `http://localhost:3000`。后端启动、演示账号和完整接口说明见 [项目 README](../README.md)，后台权限及 JWT 配置见 [后台鉴权](../backend/AUTHENTICATION.md)。
 
-To learn more about Next.js, take a look at the following resources:
+## 检查与构建
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+corepack pnpm lint
+corepack pnpm typecheck
+corepack pnpm build
+corepack pnpm start
+```
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+`typecheck` 先生成 Next.js 路由类型，再执行 TypeScript 检查；`start` 需要已完成生产构建。依赖统一使用 pnpm 和 `pnpm-lock.yaml`。
 
-## Deploy on Vercel
+## 代码位置
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- `src/app`：前台与后台页面。
+- `src/components`：首页、布局及管理组件。
+- `src/lib/api.ts`：Axios API 封装与登录失效处理。
+- `src/store`：持久化登录状态和购物车。
+- `messages/zh.json`、`messages/en.json`：页面翻译。
+- `public/gallery`、`public/products/samples`：图库与展示样品；样品不能下单。
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+框架相关修改应先阅读 [AGENTS.md](AGENTS.md) 和已安装版本的 `node_modules/next/dist/docs/`。

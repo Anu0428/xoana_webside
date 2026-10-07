@@ -1,5 +1,7 @@
 'use client';
 
+import { galleryImageUrl } from '@/lib/gallery';
+
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';
@@ -11,21 +13,10 @@ import { useStore } from '@/store';
 import { formatPrice } from '@/lib/utils';
 import { MagicCard } from '@/components/magic';
 import { useLocale } from 'next-intl';
-
-interface Product {
-    id: number;
-    name: string;
-    price: number;
-    coverImage?: string;
-    category?: string;
-    stock: number;
-    description?: string;
-}
+import { SAMPLE_PRODUCTS, type StoreProduct } from '@/lib/sample-products';
+import { QueryFeedback } from '@/components/ui/query-feedback';
 
 const CATEGORIES = ['全部', 'deck', 'wheel', 'truck', ];
-
-const MOCK_PRODUCTS: Product[] = [
-];
 
 export default function ProductsPage() {
     const t = useTranslations('products');
@@ -36,7 +27,7 @@ export default function ProductsPage() {
     const [page, setPage] = useState(0);
     const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, refetch } = useQuery({
         queryKey: ['products', page, category, search],
         queryFn: () =>
             productApi.getAll({
@@ -47,20 +38,26 @@ export default function ProductsPage() {
             }),
     });
 
-    const serverProducts: Product[] = data?.data?.data?.content || [];
-    const products =
-        serverProducts.length > 0
-            ? serverProducts
-            : MOCK_PRODUCTS.filter((p) => {
-                const matchCat = category === '全部' || p.category === category;
-                const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
-                return matchCat && matchSearch;
-            });
+    const serverProducts: StoreProduct[] = data?.data?.data?.content || [];
+    const totalPages: number = data?.data?.data?.totalPages || 1;
+    const serverIds = new Set(serverProducts.map((product) => product.id));
+    const localProducts = SAMPLE_PRODUCTS.filter((product) => {
+        const matchCategory = category === '全部' || product.category === category;
+        const searchableName = `${product.name} ${product.nameEn || ''}`.toLowerCase();
+        const matchSearch = !search || searchableName.includes(search.toLowerCase());
+        return matchCategory && matchSearch && !serverIds.has(product.id);
+    });
+    const products = [
+        ...(page === 0 ? localProducts : []),
+        ...serverProducts,
+    ];
 
-    const handleAddToCart = (product: Product) => {
+    const handleAddToCart = (product: StoreProduct) => {
+        if (product.demoOnly || product.stock <= 0) return;
         addToCart({
             id: product.id,
             name: product.name,
+            nameEn: product.nameEn,
             price: product.price,
             quantity: 1,
             image: product.coverImage,
@@ -81,7 +78,7 @@ export default function ProductsPage() {
                         animate={{ opacity: 1, y: 20, x: '-50%' }}
                         exit={{ opacity: 0, y: -50, x: '-50%' }}
                         transition={{ type: 'spring', damping: 20 }}
-                        className="fixed left-1/2 top-0 z-50 flex items-center gap-3 rounded-full bg-green-500 px-6 py-3 text-white shadow-lg"
+                        className="fixed left-1/2 top-0 z-50 flex items-center gap-3 rounded-full bg-gold-600 px-6 py-3 text-white shadow-lg"
                     >
                         <CheckCircle className="h-5 w-5" />
                         <span className="text-sm font-medium">
@@ -106,7 +103,10 @@ export default function ProductsPage() {
                             type="text"
                             placeholder={t('search')}
                             value={search}
-                            onChange={(e) => setSearch(e.target.value)}
+                            onChange={(e) => {
+                                setSearch(e.target.value);
+                                setPage(0);
+                            }}
                             className="w-full rounded-xl border border-zinc-200 bg-white py-2.5 pl-10 pr-4 text-sm text-zinc-900 placeholder-zinc-400 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                         />
                     </div>
@@ -114,21 +114,25 @@ export default function ProductsPage() {
                         {CATEGORIES.map((cat) => (
                             <button
                                 key={cat}
-                                onClick={() => setCategory(cat)}
+                                onClick={() => {
+                                    setCategory(cat);
+                                    setPage(0);
+                                }}
                                 className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
                                     category === cat
                                         ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
                                         : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
                                 }`}
                             >
-                                {cat}
+                                {cat === '全部' ? t('filter.all') : cat}
                             </button>
                         ))}
                     </div>
                 </div>
 
                 {/* Products Grid */}
-                {isLoading ? (
+                <QueryFeedback pending={false} error={isError} retry={() => { void refetch(); }} />
+                {isLoading && products.length === 0 ? (
                     <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
                         {Array.from({ length: 8 }).map((_, i) => (
                             <div key={i} className="h-72 animate-pulse rounded-2xl bg-zinc-100 dark:bg-zinc-800" />
@@ -138,15 +142,18 @@ export default function ProductsPage() {
                     <div className="py-20 text-center text-zinc-400">{t('noProducts')}</div>
                 ) : (
                     <div className="grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-4">
-                        {products.map((product, i) => (
+                        {products.map((product, i) => {
+                            const displayName = locale === 'en' ? product.nameEn || product.name : product.name;
+
+                            return (
                             <motion.div key={product.id} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}>
                                 <MagicCard className="group overflow-hidden" gradientColor="#f4f4f5">
-                                    <Link href={`/products/${product.id}`}>
+                                    <Link href={`/products/${product.id}`} aria-label={displayName}>
                                         <div className="relative h-48 overflow-hidden bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900">
                                             {product.coverImage ? (
                                                 <img
-                                                    src={product.coverImage}
-                                                    alt={product.name}
+                                                    src={galleryImageUrl(product.coverImage)}
+                                                    alt={displayName}
                                                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                                                 />
                                             ) : (
@@ -170,13 +177,14 @@ export default function ProductsPage() {
                                     <div className="p-4">
                                         {product.category && <span className="mb-1 block text-xs text-zinc-400">{product.category}</span>}
                                         <Link href={`/products/${product.id}`}>
-                                            <h3 className="line-clamp-1 font-semibold text-zinc-900 dark:text-white">{product.name}</h3>
+                                            <h3 className="line-clamp-1 font-semibold text-zinc-900 dark:text-white">{displayName}</h3>
                                         </Link>
+                                        {product.demoOnly && <p className="mt-1 text-xs text-zinc-500">{locale === 'en' ? 'Display sample' : '展示样品'}</p>}
 
                                         <div className="mt-3 flex items-center justify-between">
                                             <span className="font-bold text-zinc-900 dark:text-white">{formatPrice(product.price)}</span>
                                             <button
-                                                disabled={product.stock === 0}
+                                                disabled={product.demoOnly || product.stock <= 0}
                                                 onClick={() => handleAddToCart(product)}
                                                 className="flex items-center gap-1 rounded-full bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-all hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900"
                                             >
@@ -187,7 +195,41 @@ export default function ProductsPage() {
                                     </div>
                                 </MagicCard>
                             </motion.div>
+                            );
+                        })}
+                    </div>
+                )}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="mt-10 flex flex-wrap items-center justify-center gap-2">
+                        <button
+                            onClick={() => setPage((p) => Math.max(0, p - 1))}
+                            disabled={page === 0}
+                            className="rounded-full bg-zinc-100 px-4 py-1.5 text-sm font-medium text-zinc-600 transition-all hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                        >
+                            {t('pagination.prev')}
+                        </button>
+                        {Array.from({ length: totalPages }).map((_, i) => (
+                            <button
+                                key={i}
+                                onClick={() => setPage(i)}
+                                className={`rounded-full px-4 py-1.5 text-sm font-medium transition-all ${
+                                    page === i
+                                        ? 'bg-zinc-900 text-white dark:bg-white dark:text-zinc-900'
+                                        : 'bg-zinc-100 text-zinc-600 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700'
+                                }`}
+                            >
+                                {i + 1}
+                            </button>
                         ))}
+                        <button
+                            onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
+                            disabled={page >= totalPages - 1}
+                            className="rounded-full bg-zinc-100 px-4 py-1.5 text-sm font-medium text-zinc-600 transition-all hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700"
+                        >
+                            {t('pagination.next')}
+                        </button>
                     </div>
                 )}
             </main>

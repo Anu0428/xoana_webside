@@ -4,7 +4,6 @@ import { ThemeProvider } from "@/components/ui/theme-provider";
 import { NextIntlClientProvider } from "next-intl";
 import { getLocale, getMessages } from "next-intl/server";
 import { Providers } from "@/components/ui/providers";
-import { Navbar, Footer } from "@/components/layout/Navbar";
 import LayoutShell from '@/components/layout/LayoutShell';
 
 export const metadata: Metadata = {

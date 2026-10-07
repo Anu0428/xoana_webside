@@ -1,22 +1,16 @@
 'use client';
 
 import { useTranslations } from 'next-intl';
-import { useTheme } from 'next-themes';
-import { ShoppingCart, Sun, Moon, User, Menu, X } from 'lucide-react';
+import { ShoppingCart, User, Menu, X } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { useStore } from '@/store';
+import { useHydrated } from '@/store/useHydrated';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AnimatedThemeToggler } from '@/components/ui/animated-theme-toggler';
 import { useLocale } from 'next-intl';
-
-function getCurrentLocale(): string {
-  if (typeof document === 'undefined') return 'zh';
-  const match = document.cookie.match(/(?:^|;\s*)locale=([^;]+)/);
-  return match ? match[1] : 'zh';
-}
 
 function setLocaleCookie(locale: string) {
   document.cookie = `locale=${locale}; path=/; max-age=31536000`;
@@ -25,17 +19,15 @@ function setLocaleCookie(locale: string) {
 
 export function Navbar() {
   const t = useTranslations('nav');
-  const { theme, setTheme } = useTheme();
-  const { user, clearAuth, cartCount } = useStore();
+  const { user: storedUser, clearAuth, cartCount } = useStore();
+  const mounted = useHydrated();
+  const user = mounted ? storedUser : null;
+  const currentLocale = useLocale();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-  const [mounted, setMounted] = useState(false);
-  const [currentLocale, setCurrentLocale] = useState<string>('zh');
 
   useEffect(() => {
-    setMounted(true);
-    setCurrentLocale(getCurrentLocale());
     const handleScroll = () => setScrolled(window.scrollY > 20);
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
@@ -43,7 +35,6 @@ export function Navbar() {
 
   const toggleLocale = () => {
     const next = currentLocale === 'zh' ? 'en' : 'zh';
-    setCurrentLocale(next);
     setLocaleCookie(next);
   };
 
@@ -93,7 +84,7 @@ export function Navbar() {
                   onClick={toggleLocale}
                   className="hidden rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800 md:flex items-center"
               >
-                {mounted ? (currentLocale === 'zh' ? 'EN' : '中文') : 'EN'}
+                {currentLocale === 'zh' ? 'EN' : '中文'}
               </button>
 
 
@@ -174,7 +165,7 @@ export function Navbar() {
                         onClick={() => { toggleLocale(); setMobileOpen(false); }}
                         className="rounded-full px-3 py-1.5 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
                     >
-                      {mounted ? (currentLocale === 'zh' ? 'EN' : '中文') : 'EN'}
+                      {currentLocale === 'zh' ? 'EN' : '中文'}
                     </button>
                   </div>
 

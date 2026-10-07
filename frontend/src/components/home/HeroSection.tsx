@@ -3,7 +3,7 @@
 import { useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
-import { ArrowRight, Sparkles, ChevronDown } from 'lucide-react';
+import { ArrowRight, ChevronDown } from 'lucide-react';
 import { Particles } from '@/components/magic';
 import { useLocale } from 'next-intl';
 import { useQuery } from '@tanstack/react-query';

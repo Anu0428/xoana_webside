@@ -2,7 +2,11 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { articleApi, uploadApi } from '@/lib/api';
+import { articleApi, uploadApi, getApiErrorMessage } from '@/lib/api';
+import { galleryImageUrl } from '@/lib/gallery';
+import { Pagination } from '@/components/ui/pagination';
+import { QueryFeedback } from '@/components/ui/query-feedback';
+import type { Article } from '@/types/models';
 import { formatDate } from '@/lib/utils';
 import { Plus, Edit, Trash2, X, Upload, Download, Upload as UploadIcon, Eye, EyeOff } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -28,22 +32,35 @@ export default function AdminArticlesPage() {
   const [editId, setEditId] = useState<number | null>(null);
   const [form, setForm] = useState<ArticleForm>(defaultForm);
   const [uploading, setUploading] = useState(false);
+  const [page, setPage] = useState(0);
 
-  const { data } = useQuery({
-    queryKey: ['admin-articles'],
-    queryFn: () => articleApi.getAllAdmin({ page: 0, size: 100 }),
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['admin-articles', page],
+    queryFn: () => articleApi.getAllAdmin({ page, size: 20 }),
   });
 
   const articles = data?.data?.data?.content || [];
 
   const mutation = useMutation({
     mutationFn: (data: ArticleForm) => editId ? articleApi.update(editId, data) : articleApi.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-articles'] }); setShowForm(false); setForm(defaultForm); setEditId(null); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin-articles'] });
+      void qc.invalidateQueries({ queryKey: ['articles'] });
+      void qc.invalidateQueries({ queryKey: ['recent-articles'] });
+      void qc.invalidateQueries({ queryKey: ['article'] });
+      setShowForm(false); setForm(defaultForm); setEditId(null);
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: articleApi.delete,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-articles'] }),
+    onSuccess: () => {
+      if (articles.length === 1 && page > 0) setPage(page - 1);
+      void qc.invalidateQueries({ queryKey: ['admin-articles'] });
+      void qc.invalidateQueries({ queryKey: ['articles'] });
+      void qc.invalidateQueries({ queryKey: ['recent-articles'] });
+      void qc.invalidateQueries({ queryKey: ['article'] });
+    },
   });
 
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -52,22 +69,17 @@ export default function AdminArticlesPage() {
     setUploading(true);
     try {
       const res = await uploadApi.uploadImage(file);
-      let imageUrl = res.data?.data || '';
-
-      if (imageUrl.startsWith('/uploads/')) {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
-        imageUrl = API_BASE_URL + imageUrl;
-      }
+      const imageUrl = galleryImageUrl(res.data.data);
 
       setForm(f => ({ ...f, coverImage: imageUrl }));
-    } catch (err: any) {
-      alert(err.response?.data?.message || '上传失败');
+    } catch (err) {
+      alert(getApiErrorMessage(err, '上传失败'));
     } finally {
       setUploading(false);
     }
   };
 
-  const handleInsertImage = async () => {
+  const handleInsertImage = (field: 'content' | 'contentEn') => {
     const input = document.createElement('input');
     input.type = 'file';
     input.accept = 'image/*';
@@ -76,49 +88,21 @@ export default function AdminArticlesPage() {
       if (!file) return;
       try {
         const res = await uploadApi.uploadImage(file);
-        let url = res.data?.data;
-
-        if (url && url.startsWith('/uploads/')) {
-          const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
-          url = API_BASE_URL + url;
-        }
-
-        if (url) setForm(f => ({ ...f, content: f.content + `\n<img src="${url}" alt="" />\n` }));
+        const url = galleryImageUrl(res.data.data);
+        if (url) setForm(f => ({ ...f, [field]: f[field] + `\n<img src="${url}" alt="" />\n` }));
       } catch { alert('上传失败'); }
     };
     input.click();
   };
 
-  const handleInsertImageEn = async () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      try {
-        const res = await uploadApi.uploadImage(file);
-        let url = res.data?.data;
-
-        if (url && url.startsWith('/uploads/')) {
-          const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
-          url = API_BASE_URL + url;
-        }
-
-        if (url) setForm(f => ({ ...f, contentEn: f.contentEn + `\n<img src="${url}" alt="" />\n` }));
-      } catch { alert('上传失败'); }
-    };
-    input.click();
-  };
-
-  const handleEdit = (article: any) => {
+  const handleEdit = (article: Article) => {
     setEditId(article.id);
     setForm({ title: article.title, titleEn: article.titleEn || '', content: article.content || '', contentEn: article.contentEn || '', summary: article.summary || '', summaryEn: article.summaryEn || '', category: article.category || '', author: article.author || 'XOANA Team', coverImage: article.coverImage || '', published: article.published });
     setShowForm(true);
   };
 
   const handleExport = () => {
-    const exportData = articles.map((a: any) => ({
+    const exportData = articles.map((a) => ({
       id: a.id,
       title: a.title,
       titleEn: a.titleEn,
@@ -207,7 +191,7 @@ export default function AdminArticlesPage() {
                 className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
             >
               <Download className="h-4 w-4" />
-              导出文章
+              导出本页文章
             </button>
             <button
                 onClick={handleImport}
@@ -225,7 +209,9 @@ export default function AdminArticlesPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900">
+        <QueryFeedback pending={isPending} error={isError} retry={() => { void refetch(); }} />
+        {(mutation.isError || deleteMutation.isError) && <p role="alert" className="mb-4 text-sm text-red-600">{getApiErrorMessage(mutation.error || deleteMutation.error, '文章操作失败，修改已保留，请重试。')}</p>}
+        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm dark:bg-zinc-900">
           <table className="w-full text-sm">
             <thead>
             <tr className="border-b border-zinc-100 dark:border-zinc-800">
@@ -235,9 +221,9 @@ export default function AdminArticlesPage() {
             </tr>
             </thead>
             <tbody>
-            {articles.length === 0 ? (
+            {articles.length === 0 && !isPending && !isError ? (
                 <tr><td colSpan={5} className="py-12 text-center text-zinc-400">暂无文章</td></tr>
-            ) : articles.map((a: any) => (
+            ) : articles.map((a) => (
                 <tr key={a.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
                   <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white max-w-xs truncate">{a.title}</td>
                   <td className="px-4 py-3 text-zinc-500">{a.category}</td>
@@ -258,6 +244,7 @@ export default function AdminArticlesPage() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={data?.data.data.totalPages ?? 0} onChange={setPage} disabled={isPending} />
 
         <AnimatePresence>
           {showForm && (
@@ -300,7 +287,7 @@ export default function AdminArticlesPage() {
                       <div>
                         <div className="mb-2 flex items-center justify-between">
                           <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">正文内容（中文，支持 HTML）</label>
-                          <button type="button" onClick={handleInsertImage} className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700">
+                          <button type="button" onClick={() => handleInsertImage('content')} className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700">
                             <Upload className="h-3 w-3" /> 插入图片
                           </button>
                         </div>
@@ -310,7 +297,7 @@ export default function AdminArticlesPage() {
                       <div>
                         <div className="mb-2 flex items-center justify-between">
                           <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">正文内容（英文，支持 HTML）</label>
-                          <button type="button" onClick={handleInsertImageEn} className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700">
+                          <button type="button" onClick={() => handleInsertImage('contentEn')} className="flex items-center gap-1 text-xs text-violet-600 hover:text-violet-700">
                             <Upload className="h-3 w-3" /> 插入图片
                           </button>
                         </div>

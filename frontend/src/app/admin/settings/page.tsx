@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { uploadApi, settingsApi } from '@/lib/api';
+import { GalleryManager } from '@/components/admin/GalleryManager';
+import { GalleryImage, getGalleryImages, galleryImageUrl } from '@/lib/gallery';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Save, Image as ImageIcon, Upload, Download, Upload as UploadIcon } from 'lucide-react';
 
@@ -26,11 +28,7 @@ interface SiteSettings {
   brandImage: string;
 
   // Gallery
-  galleryImage1: string;
-  galleryImage2: string;
-  galleryImage3: string;
-  galleryImage4: string;
-  galleryImage5: string;
+  galleryImages: GalleryImage[];
 
   // 联系信息
   contactEmail: string;
@@ -75,11 +73,7 @@ const defaultSettings: SiteSettings = {
   brandImage: '',
 
   // Gallery
-  galleryImage1: '',
-  galleryImage2: '',
-  galleryImage3: '',
-  galleryImage4: '',
-  galleryImage5: '',
+  galleryImages: [],
 
   // 联系信息
   contactEmail: 'contact@xoana.com',
@@ -141,13 +135,7 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
       { key: 'stat3Label', label: '统计 3 标签（中文）' },
       { key: 'stat3LabelEn', label: 'Stat 3 Label (English)' },
     ]},
-  { title: '产品展示 (Gallery)', fields: [
-      { key: 'galleryImage1', label: 'Gallery 图片 1 URL（大图，左上）', image: true },
-      { key: 'galleryImage2', label: 'Gallery 图片 2 URL（右上）', image: true },
-      { key: 'galleryImage3', label: 'Gallery 图片 3 URL（右中）', image: true },
-      { key: 'galleryImage4', label: 'Gallery 图片 4 URL（右下）', image: true },
-      { key: 'galleryImage5', label: 'Gallery 图片 5 URL（底部宽图）', image: true },
-    ]},
+  { title: '产品展示 (Gallery)', fields: [] },
   { title: '联系信息 (Contact)', fields: [
       { key: 'contactEmail', label: '联系邮箱' },
       { key: 'contactPhone', label: '联系电话' },
@@ -165,41 +153,31 @@ const SECTIONS: { title: string; fields: FieldDef[] }[] = [
 export default function AdminSettingsPage() {
   const qc = useQueryClient();
   const [settings, setSettings] = useState<SiteSettings>(defaultSettings);
-  const [mounted, setMounted] = useState(false);
   const [saved, setSaved] = useState(false);
   const [uploading, setUploading] = useState<string | null>(null);
 
   // Load settings from API
-  const { data: apiSettings } = useQuery({
+  const { data: apiSettings, isPending: loading, isError: loadError, refetch } = useQuery({
     queryKey: ['site-settings'],
     queryFn: () => settingsApi.get(),
+    refetchOnWindowFocus: false,
   });
 
   const saveMutation = useMutation({
     mutationFn: (data: SiteSettings) => settingsApi.update(data as unknown as Record<string, unknown>),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['site-settings'] });
+    onSuccess: (response) => {
+      qc.setQueryData(['site-settings'], response);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     },
   });
-
-  // Only run on client
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setMounted(true);
-  }, []);
 
   // Apply API settings when loaded
   useEffect(() => {
     if (apiSettings?.data?.data) {
       const remote = apiSettings.data.data;
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setSettings({ ...defaultSettings, ...remote });
-      // Also update localStorage cache
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('xoana_site_settings', JSON.stringify({ ...defaultSettings, ...remote }));
-      }
+      setSettings({ ...defaultSettings, ...remote, galleryImages: getGalleryImages(remote) });
     }
   }, [apiSettings]);
 
@@ -207,13 +185,7 @@ export default function AdminSettingsPage() {
     setUploading(key);
     try {
       const res = await uploadApi.uploadImage(file);
-      let url = res.data?.data;
-
-      // 如果是相对路径，拼接后端 API 地址
-      if (url && url.startsWith('/uploads/')) {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
-        url = API_BASE_URL + url;
-      }
+      const url = galleryImageUrl(res.data.data);
 
       if (url) setSettings(s => ({ ...s, [key]: url }));
     } catch { alert('上传失败'); }
@@ -223,10 +195,6 @@ export default function AdminSettingsPage() {
   const handleSave = () => {
     // Save to database via API
     saveMutation.mutate(settings);
-    // Also update localStorage cache
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('xoana_site_settings', JSON.stringify(settings));
-    }
   };
 
   // 导出设置为 JSON 文件
@@ -253,18 +221,12 @@ export default function AdminSettingsPage() {
       try {
         const text = await file.text();
         const imported = JSON.parse(text);
+        if (!imported || typeof imported !== 'object' || Array.isArray(imported)) throw new Error('Settings must be an object');
 
         if (confirm('导入设置将覆盖当前所有配置，确定要继续吗？')) {
-          setSettings({ ...defaultSettings, ...imported });
-          // 自动保存到 localStorage
-          setTimeout(() => {
-            if (typeof window !== 'undefined') {
-              localStorage.setItem('xoana_site_settings', JSON.stringify({ ...defaultSettings, ...imported }));
-            }
-            setSaved(true);
-            setTimeout(() => setSaved(false), 2000);
-          }, 100);
-          alert('设置导入成功！');
+          setSettings({ ...defaultSettings, ...imported, galleryImages: getGalleryImages(imported) });
+          setSaved(false);
+          alert('设置已导入，请点击保存设置以生效。');
         }
       } catch (err) {
         alert('导入失败：文件格式不正确');
@@ -280,6 +242,10 @@ export default function AdminSettingsPage() {
 
   return (
       <div>
+        {loadError && <div role="alert" className="mb-4 text-red-600">设置加载失败。<button type="button" onClick={() => refetch()} className="ml-2 underline">重试</button></div>}
+        {saveMutation.isError && <p role="alert" className="mb-4 text-red-600">保存失败，修改仍保留在页面，请重试。</p>}
+        {loading && <p role="status" className="mb-4 text-zinc-500">正在加载设置…</p>}
+        <fieldset disabled={loading || loadError || !!uploading || saveMutation.isPending} className="min-w-0 disabled:opacity-70">
         <div className="mb-6 flex items-center justify-between">
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">内容设置</h1>
           <div className="flex gap-2">
@@ -302,7 +268,7 @@ export default function AdminSettingsPage() {
                 className="flex items-center gap-2 rounded-xl bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-white dark:text-zinc-900"
             >
               <Save className="h-4 w-4" />
-              {saved ? '已保存！' : '保存设置'}
+              {saveMutation.isPending ? '保存中...' : saved ? '已保存！' : '保存设置'}
             </button>
           </div>
         </div>
@@ -311,6 +277,20 @@ export default function AdminSettingsPage() {
           {SECTIONS.map(section => (
               <div key={section.title} className="rounded-2xl bg-white p-6 shadow-sm dark:bg-zinc-900">
                 <h2 className="mb-4 font-semibold text-zinc-900 dark:text-white">{section.title}</h2>
+                {section.title === '产品展示 (Gallery)' && (
+                  <GalleryManager
+                    images={settings.galleryImages}
+                    onChange={update => {
+                      setSaved(false);
+                      setSettings(current => ({ ...current, galleryImages: update(current.galleryImages) }));
+                    }}
+                    onBusyChange={busy => setUploading(busy ? 'gallery' : null)}
+                    onSave={handleSave}
+                    saving={saveMutation.isPending}
+                    saved={saved}
+                    saveError={saveMutation.isError}
+                  />
+                )}
                 <div className="space-y-4">
                   {section.fields.map(field => (
                       <div key={field.key}>
@@ -320,7 +300,7 @@ export default function AdminSettingsPage() {
                         </label>
                         {field.textarea ? (
                             <textarea
-                                value={mounted ? String(settings[field.key] ?? '') : ''}
+                                value={String(settings[field.key] ?? '')}
                                 onChange={e => setSettings(s => ({ ...s, [field.key]: e.target.value }))}
                                 rows={3}
                                 className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
@@ -329,7 +309,7 @@ export default function AdminSettingsPage() {
                             <div className="flex gap-2">
                               <input
                                   type="text"
-                                  value={mounted ? String(settings[field.key] ?? '') : ''}
+                                  value={String(settings[field.key] ?? '')}
                                   onChange={e => setSettings(s => ({ ...s, [field.key]: e.target.value }))}
                                   placeholder="https://... 或点击上传"
                                   className="flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
@@ -345,12 +325,12 @@ export default function AdminSettingsPage() {
                             <button
                                 onClick={() => handleToggleChange(field.key)}
                                 className={`relative inline-flex h-8 w-14 items-center rounded-full transition-colors ${
-                                    mounted && settings[field.key] ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
+                                    settings[field.key] ? 'bg-green-500' : 'bg-zinc-300 dark:bg-zinc-600'
                                 }`}
                             >
                               <span
                                   className={`inline-block h-6 w-6 transform rounded-full bg-white transition-transform ${
-                                      mounted && settings[field.key] ? 'translate-x-7' : 'translate-x-1'
+                                      settings[field.key] ? 'translate-x-7' : 'translate-x-1'
                                   }`}
                               />
 
@@ -358,13 +338,13 @@ export default function AdminSettingsPage() {
                         ) : (
                             <input
                                 type="text"
-                                value={mounted ? String(settings[field.key] ?? '') : ''}
+                                value={String(settings[field.key] ?? '')}
                                 onChange={e => setSettings(s => ({ ...s, [field.key]: e.target.value }))}
                                 className="w-full rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm text-zinc-900 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white"
                             />
                         )}
                         {/* Image preview - only render on client */}
-                        {mounted && field.image && typeof settings[field.key] === 'string' && settings[field.key] && (
+                        {field.image && typeof settings[field.key] === 'string' && settings[field.key] && (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
                                 src={settings[field.key] as string}
@@ -379,6 +359,7 @@ export default function AdminSettingsPage() {
               </div>
           ))}
         </div>
+        </fieldset>
       </div>
   );
 }

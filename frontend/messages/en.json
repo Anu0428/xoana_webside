@@ -77,7 +77,11 @@
     "quantity": "Quantity",
     "inStock": "In Stock",
     "noProducts": "No products found",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "pagination": {
+      "prev": "Previous",
+      "next": "Next"
+    }
   },
   "articles": {
     "title": "Articles",
@@ -134,6 +138,12 @@
     "forgotPassword": "Forgot password?"
   },
   "profile": {
+    "continuePayment": "Continue payment",
+    "paying": "Processing...",
+    "testPayment": "Test payment",
+    "paymentSucceeded": "Payment completed.",
+    "paymentFailed": "Payment failed. Please try again.",
+    "sessionChanged": "Your session changed. Sign in again to check the payment result.",
     "title": "My Profile",
     "orders": "My Orders",
     "settings": "Settings",
@@ -176,6 +186,7 @@
     "inactive": "Inactive"
   },
   "common": {
+    "pagination": "Pagination",
     "loading": "Loading...",
     "error": "Something went wrong",
     "retry": "Retry",

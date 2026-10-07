@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useStore } from '@/store';
-import { authApi } from '@/lib/api';
+import { authApi, getApiErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -18,16 +18,18 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     if (form.password !== form.confirmPassword) { setError('两次密码不一致'); return; }
     setLoading(true);
     setError('');
     try {
       const res = await authApi.register({ username: form.username, email: form.email, password: form.password, nickname: form.nickname });
+      if (!res.data.success || !res.data.data?.token) throw new Error('Invalid authentication response');
       const { token, ...user } = res.data.data;
       setAuth(user, token);
       router.push('/');
-    } catch (err: any) {
-      setError(err.response?.data?.message || '注册失败，请重试');
+    } catch (err) {
+      setError(getApiErrorMessage(err, '注册失败，请重试'));
     } finally {
       setLoading(false);
     }

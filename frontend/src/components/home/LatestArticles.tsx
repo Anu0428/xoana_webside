@@ -1,37 +1,27 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { galleryImageUrl } from '@/lib/gallery';
+
+import { useLocale, useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { ArrowRight, Clock, Eye } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { articleApi } from '@/lib/api';
 import { formatDate } from '@/lib/utils';
-
-interface Article {
-  id: number;
-  title: string;
-  summary?: string;
-  coverImage?: string;
-  createdAt: string;
-  viewCount: number;
-  author?: string;
-  category?: string;
-}
+import { QueryFeedback } from '@/components/ui/query-feedback';
 
 export function LatestArticles() {
   const t = useTranslations('home.articles');
+  const articleT = useTranslations('articles');
+  const locale = useLocale();
 
-  const { data } = useQuery({
+  const { data, isPending, isError, refetch } = useQuery({
     queryKey: ['recent-articles'],
     queryFn: () => articleApi.getRecent(),
   });
 
-  const articles: Article[] = data?.data?.data || [];
-
-  const displayArticles = articles.length > 0 ? articles : [
-
-  ];
+  const articles = data?.data?.data || [];
 
   return (
     <section className="bg-zinc-50 py-24 dark:bg-zinc-900">
@@ -59,8 +49,10 @@ export function LatestArticles() {
           </Link>
         </motion.div>
 
+        <QueryFeedback pending={isPending} error={isError} retry={() => { void refetch(); }} />
+        {!isPending && !isError && articles.length === 0 && <p className="text-center text-zinc-400">{articleT('noArticles')}</p>}
         <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
-          {displayArticles.slice(0, 3).map((article, i) => (
+          {articles.slice(0, 3).map((article, i) => (
             <motion.article
               key={article.id}
               initial={{ opacity: 0, y: 30 }}
@@ -73,8 +65,8 @@ export function LatestArticles() {
                 <div className="h-48 overflow-hidden bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-700 dark:to-zinc-800">
                   {article.coverImage ? (
                     <img
-                      src={article.coverImage}
-                      alt={article.title}
+                      src={galleryImageUrl(article.coverImage)}
+                      alt={locale === 'en' ? article.titleEn || article.title : article.title}
                       className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
                     />
                   ) : (
@@ -82,7 +74,7 @@ export function LatestArticles() {
                       <div
                         className="h-16 w-16 rounded-2xl opacity-30"
                         style={{
-                          background: `linear-gradient(135deg, hsl(${i * 60 + 250}, 70%, 60%), hsl(${i * 60 + 280}, 70%, 50%))`,
+                          background: `linear-gradient(135deg, hsl(42, 58%, ${Math.max(48, 68 - i * 5)}%), hsl(35, 52%, ${Math.max(30, 48 - i * 4)}%))`,
                         }}
                       />
                     </div>
@@ -95,11 +87,11 @@ export function LatestArticles() {
                     </span>
                   )}
                   <h3 className="line-clamp-2 text-lg font-semibold text-zinc-900 transition-colors group-hover:text-violet-600 dark:text-white dark:group-hover:text-violet-400">
-                    {article.title}
+                  {locale === 'en' ? article.titleEn || article.title : article.title}
                   </h3>
-                  {article.summary && (
+                  {(article.summary || article.summaryEn) && (
                     <p className="mt-2 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">
-                      {article.summary}
+                      {locale === 'en' ? article.summaryEn || article.summary : article.summary}
                     </p>
                   )}
                   <div className="mt-4 flex items-center justify-between text-xs text-zinc-400">

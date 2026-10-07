@@ -1,5 +1,7 @@
 'use client';
 
+import { galleryImageUrl } from '@/lib/gallery';
+
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
 import { productApi } from '@/lib/api';
@@ -8,50 +10,34 @@ import { useTranslations } from 'next-intl';
 import { ShoppingCart, ArrowLeft, Package, Ruler, Tag, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { formatPrice } from '@/lib/utils';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
-
-// 从 localStorage 读取保存的产品
-const getSavedProducts = () => {
-  if (typeof window === 'undefined') return {};
-  try {
-    const saved = localStorage.getItem('xoana_products');
-    return saved ? JSON.parse(saved) : {};
-  } catch {
-    return {};
-  }
-};
+import { getSampleProductById, type StoreProduct } from '@/lib/sample-products';
 
 export default function ProductDetailPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
   const router = useRouter();
   const locale = useLocale();
   const t = useTranslations('products');
   const { addToCart } = useStore();
   const [quantity, setQuantity] = useState(1);
   const [activeImage, setActiveImage] = useState(0);
-  const [savedProducts, setSavedProducts] = useState<any>({});
   const [showSuccessToast, setShowSuccessToast] = useState(false);
 
-  // 从 localStorage 读取保存的产品
-  useEffect(() => {
-    setSavedProducts(getSavedProducts());
-  }, []);
-
   const id = Number(params.id);
+  const sampleProduct = getSampleProductById(id);
 
   const { data, isLoading, error } = useQuery({
     queryKey: ['product', id],
     queryFn: () => productApi.getById(id),
-    enabled: !isNaN(id),
+    enabled: Number.isSafeInteger(id) && id > 0,
   });
 
-  // 优先使用 API 返回的数据，其次使用 localStorage 保存的，最后使用 MOCK 数据
-  const product = data?.data?.data || savedProducts[id] || null;
+  const product: StoreProduct | undefined = data?.data?.data || sampleProduct;
 
   // 处理加载状态
-  if (isLoading) {
+  if (isLoading && !product) {
     return (
         <div className="flex min-h-screen items-center justify-center bg-white dark:bg-zinc-950">
           <div className="text-center">
@@ -63,7 +49,7 @@ export default function ProductDetailPage() {
   }
 
   // 处理错误情况 - 产品不存在
-  if (error || !product) {
+  if ((error && !product) || !product) {
     return (
         <div className="bg-white dark:bg-zinc-950">
           <main className="mx-auto max-w-7xl px-4 pt-24 pb-16 sm:px-6 lg:px-8">
@@ -92,13 +78,20 @@ export default function ProductDetailPage() {
   const isEnglish = locale === 'en';
   const displayName = isEnglish ? (product.nameEn || product.name) : product.name;
   const displayDescription = isEnglish ? (product.descriptionEn || product.description) : product.description;
+  const displayMaterial = isEnglish ? (product.materialEn || product.material) : product.material;
+  const productImages = [...new Set([product.coverImage, ...(product.images || [])].filter((src): src is string => !!src))];
+  const activeProductImage = productImages[activeImage] || productImages[0];
+  const available = !product.demoOnly && product.stock > 0;
+  const selectedQuantity = Math.max(1, Math.min(quantity, product.stock));
 
   const handleAddToCart = () => {
+    if (!available) return;
     addToCart({
       id: product.id,
-      name: displayName,
+      name: product.name,
+      nameEn: product.nameEn,
       price: product.price,
-      quantity,
+      quantity: selectedQuantity,
       image: product.coverImage || product.images?.[0],
     });
 
@@ -108,11 +101,13 @@ export default function ProductDetailPage() {
   };
 
   const handleBuyNow = () => {
+    if (!available) return;
     addToCart({
       id: product.id,
-      name: displayName,
+      name: product.name,
+      nameEn: product.nameEn,
       price: product.price,
-      quantity,
+      quantity: selectedQuantity,
       image: product.coverImage || product.images?.[0],
     });
     router.push('/checkout');
@@ -128,7 +123,7 @@ export default function ProductDetailPage() {
                   animate={{ opacity: 1, y: 20, x: '-50%' }}
                   exit={{ opacity: 0, y: -50, x: '-50%' }}
                   transition={{ type: 'spring', damping: 20 }}
-                  className="fixed left-1/2 top-0 z-50 flex items-center gap-3 rounded-full bg-green-500 px-6 py-3 text-white shadow-lg"
+                  className="fixed left-1/2 top-0 z-50 flex items-center gap-3 rounded-full bg-gold-600 px-6 py-3 text-white shadow-lg"
               >
                 <CheckCircle className="h-5 w-5" />
                 <span className="text-sm font-medium">
@@ -150,9 +145,9 @@ export default function ProductDetailPage() {
             {/* Images */}
             <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
               <div className="aspect-square overflow-hidden rounded-3xl bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900">
-                {product.coverImage || (product.images && product.images[activeImage]) ? (
+                {activeProductImage ? (
                     <img
-                        src={product.coverImage || product.images[activeImage]}
+                        src={galleryImageUrl(activeProductImage)}
                         alt={displayName}
                         className="h-full w-full object-cover"
                     />
@@ -163,9 +158,9 @@ export default function ProductDetailPage() {
                 )}
               </div>
 
-              {product.images && product.images.length > 1 && (
+              {productImages.length > 1 && (
                   <div className="mt-4 grid grid-cols-4 gap-3">
-                    {product.images.map((img: string, i: number) => (
+                    {productImages.map((img, i) => (
                         <button
                             key={i}
                             onClick={() => setActiveImage(i)}
@@ -173,7 +168,7 @@ export default function ProductDetailPage() {
                                 i === activeImage ? 'border-violet-500' : 'border-transparent'
                             }`}
                         >
-                          <img src={img} alt="" className="h-full w-full object-cover" />
+                          <img src={galleryImageUrl(img)} alt="" className="h-full w-full object-cover" />
                         </button>
                     ))}
                   </div>
@@ -189,14 +184,15 @@ export default function ProductDetailPage() {
               )}
 
               <h1 className="text-3xl font-bold text-zinc-900 dark:text-white">{displayName}</h1>
+              {product.demoOnly && <p className="mt-3 text-sm text-zinc-500">{isEnglish ? 'Display sample — contact us for purchase.' : '展示样品，请联系我们购买。'}</p>}
               <p className="mt-4 text-4xl font-bold text-zinc-900 dark:text-white">{formatPrice(product.price)}</p>
 
               <div className="mt-6 space-y-3">
-                {product.material && (
+                {displayMaterial && (
                     <div className="flex items-center gap-3 text-sm">
                       <Package className="h-4 w-4 text-zinc-400" />
                       <span className="text-zinc-500 dark:text-zinc-400">{t('material')}:</span>
-                      <span className="text-zinc-900 dark:text-white">{product.material}</span>
+                      <span className="text-zinc-900 dark:text-white">{displayMaterial}</span>
                     </div>
                 )}
 
@@ -229,14 +225,16 @@ export default function ProductDetailPage() {
                 <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{t('quantity')}:</span>
                 <div className="flex items-center gap-2">
                   <button
-                      onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                      disabled={!available || selectedQuantity <= 1}
+                      onClick={() => setQuantity(Math.max(1, selectedQuantity - 1))}
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300"
                   >
                     -
                   </button>
-                  <span className="w-8 text-center text-zinc-900 dark:text-white">{quantity}</span>
+                  <span className="w-8 text-center text-zinc-900 dark:text-white">{selectedQuantity}</span>
                   <button
-                      onClick={() => setQuantity(Math.min(product.stock, quantity + 1))}
+                      disabled={!available || selectedQuantity >= product.stock}
+                      onClick={() => setQuantity(Math.min(product.stock, selectedQuantity + 1))}
                       className="flex h-8 w-8 items-center justify-center rounded-full border border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300"
                   >
                     +
@@ -247,7 +245,7 @@ export default function ProductDetailPage() {
               {/* Actions */}
               <div className="mt-8 flex gap-4">
                 <button
-                    disabled={product.stock === 0}
+                    disabled={!available}
                     onClick={handleAddToCart}
                     className="flex flex-1 items-center justify-center gap-2 rounded-2xl border-2 border-zinc-900 px-6 py-4 font-semibold text-zinc-900 transition-all hover:bg-zinc-50 disabled:opacity-50 dark:border-white dark:text-white dark:hover:bg-zinc-900"
                 >
@@ -256,7 +254,7 @@ export default function ProductDetailPage() {
                 </button>
 
                 <button
-                    disabled={product.stock === 0}
+                    disabled={!available}
                     onClick={handleBuyNow}
                     className="flex flex-1 items-center justify-center rounded-2xl bg-zinc-900 px-6 py-4 font-semibold text-white transition-all hover:bg-zinc-700 disabled:opacity-50 dark:bg-white dark:text-zinc-900"
                 >

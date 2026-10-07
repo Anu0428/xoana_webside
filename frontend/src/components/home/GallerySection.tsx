@@ -5,22 +5,7 @@ import { motion } from 'framer-motion';
 import Image from 'next/image';
 import { useQuery } from '@tanstack/react-query';
 import { settingsApi } from '@/lib/api';
-
-const FALLBACK_COLORS = [
-  'from-violet-500 to-purple-700',
-  'from-blue-500 to-cyan-600',
-  'from-rose-500 to-pink-600',
-  'from-amber-500 to-orange-600',
-  'from-emerald-500 to-teal-600',
-];
-
-const SIZES = [
-  'col-span-2 row-span-2',
-  'col-span-1 row-span-1',
-  'col-span-1 row-span-1',
-  'col-span-1 row-span-1',
-  'col-span-2 row-span-1',
-];
+import { getGalleryImages, galleryImageUrl } from '@/lib/gallery';
 
 export function GallerySection() {
   const t = useTranslations('home.gallery');
@@ -32,16 +17,10 @@ export function GallerySection() {
   });
 
   const s = settingsData?.data?.data || {};
-  const galleryImages = [
-    s.galleryImage1 || '',
-    s.galleryImage2 || '',
-    s.galleryImage3 || '',
-    s.galleryImage4 || '',
-    s.galleryImage5 || '',
-  ];
+  const galleryImages = getGalleryImages(s);
 
   return (
-    <section className="bg-white py-24 dark:bg-zinc-950">
+    <section id="gallery" className="bg-white py-24 dark:bg-zinc-950">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -49,7 +28,7 @@ export function GallerySection() {
           viewport={{ once: true }}
           className="mb-12 text-center"
         >
-          <p className="mb-2 text-sm font-medium uppercase tracking-widest text-zinc-400">
+          <p className="mb-2 text-sm font-medium uppercase tracking-widest text-gold-600 dark:text-gold-400">
             Gallery
           </p>
           <h2 className="text-4xl font-bold text-zinc-900 dark:text-white">
@@ -57,31 +36,28 @@ export function GallerySection() {
           </h2>
         </motion.div>
 
-        <div className="grid auto-rows-[200px] grid-cols-3 gap-4">
-          {SIZES.map((size, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, scale: 0.9 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
-              whileHover={{ scale: 1.02 }}
-              className={`relative overflow-hidden rounded-2xl ${size} cursor-pointer`}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {galleryImages.map((image, index) => (
+            <motion.figure
+              key={`${image.src}-${index}`}
+              initial={{ opacity: 0, y: 24 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true, amount: 0.15 }}
+              transition={{ delay: (index % 3) * 0.08 }}
+              className="group relative aspect-[3/4] overflow-hidden rounded-2xl border border-zinc-200 bg-zinc-50 shadow-sm transition-colors hover:border-gold-500/70 dark:border-zinc-800 dark:bg-zinc-900"
             >
-              {galleryImages[i] ? (
-                <Image
-                  src={galleryImages[i]}
-                  alt={`Gallery ${i + 1}`}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 768px) 100vw, 33vw"
-                />
-              ) : (
-                <div className={`flex h-full w-full items-center justify-center bg-gradient-to-br ${FALLBACK_COLORS[i]}`}>
-                  <span className="text-6xl font-black text-white/20">X</span>
-                </div>
-              )}
-            </motion.div>
+              <Image
+                src={galleryImageUrl(image.src)}
+                alt={image.alt}
+                fill
+                className={`${image.fit === 'contain' ? 'object-contain' : 'object-cover'} transition-transform duration-700 group-hover:scale-[1.025]`}
+                sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/55 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+              <figcaption className="pointer-events-none absolute bottom-4 left-4 translate-y-2 text-xs font-semibold uppercase tracking-[0.22em] text-white opacity-0 transition-all duration-300 group-hover:translate-y-0 group-hover:opacity-100">
+                XOANA / {String(index + 1).padStart(2, '0')}
+              </figcaption>
+            </motion.figure>
           ))}
         </div>
       </div>

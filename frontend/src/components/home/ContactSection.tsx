@@ -28,10 +28,12 @@ export function ContactSection() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (sending) return;
     setSending(true);
     setError('');
     try {
-      await contactApi.submit({ name, email, message });
+      const result = await contactApi.submit({ name: name.trim(), email: email.trim(), message: message.trim() });
+      if (result.data?.success !== true) throw new Error('Message was not accepted');
       setSent(true);
     } catch {
       setError(t('error'));

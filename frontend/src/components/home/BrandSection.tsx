@@ -1,5 +1,7 @@
 'use client';
 
+import { galleryImageUrl } from '@/lib/gallery';
+
 import { useTranslations } from 'next-intl';
 import { motion } from 'framer-motion';
 import { NumberTicker } from '@/components/magic';
@@ -24,17 +26,17 @@ export function BrandSection() {
 
   const stats = [
     {
-      value: settings.stat1Value || 100,
+      value: settings.stat1Value ?? 100,
       label: isEnglish ? (settings.stat1LabelEn || t('stat1Label')) : (settings.stat1Label || t('stat1Label')),
       suffix: '+'
     },
     {
-      value: settings.stat2Value || 10000,
+      value: settings.stat2Value ?? 10000,
       label: isEnglish ? (settings.stat2LabelEn || t('stat2Label')) : (settings.stat2Label || t('stat2Label')),
       suffix: '+'
     },
     {
-      value: settings.stat3Value || 5,
+      value: settings.stat3Value ?? 5,
       label: isEnglish ? (settings.stat3LabelEn || t('stat3Label')) : (settings.stat3Label || t('stat3Label')),
       suffix: '+'
     },
@@ -101,7 +103,7 @@ export function BrandSection() {
               <div className="relative aspect-square overflow-hidden rounded-3xl">
                 {settings.brandImage ? (
                     <Image
-                        src={settings.brandImage}
+                        src={galleryImageUrl(settings.brandImage)}
                         alt="About XOANA"
                         fill
                         className="object-cover"

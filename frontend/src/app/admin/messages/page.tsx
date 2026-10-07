@@ -2,17 +2,20 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { contactApi } from '@/lib/api';
+import { contactApi, getApiErrorMessage } from '@/lib/api';
+import { Pagination } from '@/components/ui/pagination';
+import { QueryFeedback } from '@/components/ui/query-feedback';
 import { formatDate } from '@/lib/utils';
 import { Trash2, Mail, MailOpen } from 'lucide-react';
 
 export default function AdminMessagesPage() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [page, setPage] = useState(0);
 
-  const { data } = useQuery({
-    queryKey: ['admin-messages'],
-    queryFn: () => contactApi.getAll({ page: 0, size: 100 }),
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['admin-messages', page],
+    queryFn: () => contactApi.getAll({ page, size: 20 }),
   });
 
   const messages = data?.data?.data?.content || [];
@@ -24,10 +27,13 @@ export default function AdminMessagesPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => contactApi.delete(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-messages'] }),
+    onSuccess: () => {
+      if (messages.length === 1 && page > 0) setPage(page - 1);
+      void qc.invalidateQueries({ queryKey: ['admin-messages'] });
+    },
   });
 
-  const unreadCount = messages.filter((m: any) => !m.read).length;
+  const unreadCount = messages.filter((m) => !m.read).length;
 
   return (
     <div>
@@ -35,20 +41,22 @@ export default function AdminMessagesPage() {
         <div>
           <h1 className="text-2xl font-bold text-zinc-900 dark:text-white">联系消息</h1>
           {unreadCount > 0 && (
-            <p className="mt-1 text-sm text-violet-600 dark:text-violet-400">{unreadCount} 条未读消息</p>
+            <p className="mt-1 text-sm text-violet-600 dark:text-violet-400">本页 {unreadCount} 条未读消息</p>
           )}
         </div>
       </div>
 
+      <QueryFeedback pending={isPending} error={isError} retry={() => { void refetch(); }} />
+      {(markReadMutation.isError || deleteMutation.isError) && <p role="alert" className="mb-4 text-sm text-red-600">{getApiErrorMessage(markReadMutation.error || deleteMutation.error, '更新消息失败，请重试。')}</p>}
       <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900">
-        {messages.length === 0 ? (
+        {messages.length === 0 && !isPending && !isError ? (
           <div className="py-16 text-center text-zinc-400">
             <Mail className="mx-auto mb-3 h-10 w-10 opacity-30" />
             <p>暂无联系消息</p>
           </div>
         ) : (
           <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
-            {messages.map((msg: any) => (
+            {messages.map((msg) => (
               <div
                 key={msg.id}
                 className={`p-5 transition-colors ${!msg.read ? 'bg-violet-50/50 dark:bg-violet-900/10' : ''}`}
@@ -96,6 +104,7 @@ export default function AdminMessagesPage() {
                   <div className="flex shrink-0 gap-2">
                     {!msg.read && (
                       <button
+                        disabled={markReadMutation.isPending}
                         onClick={() => markReadMutation.mutate(msg.id)}
                         className="rounded-lg px-3 py-1.5 text-xs font-medium text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20"
                       >
@@ -103,6 +112,7 @@ export default function AdminMessagesPage() {
                       </button>
                     )}
                     <button
+                      disabled={deleteMutation.isPending}
                       onClick={() => { if (confirm('确认删除此消息？')) deleteMutation.mutate(msg.id); }}
                       className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"
                     >
@@ -115,6 +125,7 @@ export default function AdminMessagesPage() {
           </div>
         )}
       </div>
+      <Pagination page={page} totalPages={data?.data.data.totalPages ?? 0} onChange={setPage} disabled={isPending} />
     </div>
   );
 }

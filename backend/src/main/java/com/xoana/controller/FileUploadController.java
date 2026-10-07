@@ -1,95 +1,70 @@
 package com.xoana.controller;
 
 import com.xoana.dto.ApiResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.UUID;
+import java.util.Arrays;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @RequestMapping("/api/admin/upload")
+@PreAuthorize("hasRole('ADMIN')")
 public class FileUploadController {
+    private static final Logger log = LoggerFactory.getLogger(FileUploadController.class);
+    private static final long MAX_IMAGE_SIZE = 10 * 1024 * 1024;
 
     @Value("${app.upload.dir}")
     private String uploadDir;
 
-    @Value("${server.url:http://localhost:8080}")
-    private String serverUrl;
-
-    // ... existing code ...
-
     @PostMapping("/image")
-    public ResponseEntity<ApiResponse<String>> uploadImage(@RequestParam("file") MultipartFile file) throws IOException {
-        System.out.println("=== 开始处理文件上传 ===");
-        System.out.println("配置的上传目录：" + uploadDir);
-
+    public ResponseEntity<ApiResponse<String>> uploadImage(@RequestParam("file") MultipartFile file) {
         if (file.isEmpty()) {
-            System.out.println("文件为空");
             return ResponseEntity.badRequest().body(ApiResponse.error("文件为空"));
         }
-
-        System.out.println("原始文件名：" + file.getOriginalFilename());
-        System.out.println("文件大小：" + file.getSize() + " bytes");
-        System.out.println("文件类型：" + file.getContentType());
-
-        String contentType = file.getContentType();
-        if (contentType == null || !contentType.startsWith("image/")) {
-            System.out.println("文件类型不符合要求：" + contentType);
-            return ResponseEntity.badRequest().body(ApiResponse.error("只支持图片文件"));
+        if (file.getSize() > MAX_IMAGE_SIZE) {
+            return ResponseEntity.status(413).body(ApiResponse.error("图片不能超过 10 MB"));
         }
-
-        String extension = getExtension(file.getOriginalFilename());
-        String filename = UUID.randomUUID() + extension;
-        System.out.println("生成的新文件名：" + filename);
-
-        Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
-        System.out.println("绝对上传路径：" + uploadPath);
-
-        if (!Files.exists(uploadPath)) {
-            Files.createDirectories(uploadPath);
-            System.out.println("已创建上传目录：" + uploadPath);
-        }
-
-        Path filePath = uploadPath.resolve(filename);
-        System.out.println("文件完整路径：" + filePath);
-
         try {
-            file.transferTo(filePath.toFile());
-            System.out.println("文件保存成功：" + filePath);
-
-            if (Files.exists(filePath)) {
-                System.out.println("文件验证成功，大小：" + Files.size(filePath) + " bytes");
-            } else {
-                System.out.println("⚠️ 警告：文件保存后不存在！");
+            String extension;
+            try (InputStream input = file.getInputStream()) {
+                extension = imageExtension(input.readNBytes(16));
             }
-        } catch (Exception e) {
-            System.out.println("❌ 文件保存失败：" + e.getMessage());
-            e.printStackTrace();
-            return ResponseEntity.internalServerError().body(ApiResponse.error("保存文件失败：" + e.getMessage()));
+            if (extension == null) {
+                return ResponseEntity.badRequest().body(ApiResponse.error("只支持 PNG、JPEG、GIF 或 WebP 图片"));
+            }
+            // Choose a safe extension from the file signature, never from the client filename.
+            String filename = UUID.randomUUID() + extension;
+            Path uploadPath = Paths.get(uploadDir).toAbsolutePath().normalize();
+            Files.createDirectories(uploadPath);
+            Path filePath = uploadPath.resolve(filename);
+            file.transferTo(filePath.toFile());
+            return ResponseEntity.ok(ApiResponse.success("/uploads/" + filename));
+        } catch (IOException exception) {
+            log.error("Unable to save uploaded image", exception);
+            return ResponseEntity.internalServerError().body(ApiResponse.error("保存文件失败，请稍后重试"));
         }
-
-        // 返回完整的 URL
-        String imageUrl = "/uploads/" + filename;
-        System.out.println("返回的图片 URL：" + imageUrl);
-        System.out.println("=== 文件上传完成 ===");
-
-        return ResponseEntity.ok(ApiResponse.success(imageUrl));
     }
 
-
-
-
-    private String getExtension(String filename) {
-        if (filename == null) return ".jpg";
-        int dotIndex = filename.lastIndexOf('.');
-        return dotIndex >= 0 ? filename.substring(dotIndex) : ".jpg";
+    private String imageExtension(byte[] header) {
+        if (header.length >= 8 && Arrays.equals(Arrays.copyOf(header, 8),
+                new byte[]{(byte) 0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'})) return ".png";
+        if (header.length >= 3 && (header[0] & 0xff) == 0xff && (header[1] & 0xff) == 0xd8
+                && (header[2] & 0xff) == 0xff) return ".jpg";
+        String signature = new String(header, StandardCharsets.US_ASCII);
+        if (signature.startsWith("GIF87a") || signature.startsWith("GIF89a")) return ".gif";
+        if (header.length >= 12 && signature.startsWith("RIFF") && signature.substring(8, 12).equals("WEBP")) return ".webp";
+        return null;
     }
 }

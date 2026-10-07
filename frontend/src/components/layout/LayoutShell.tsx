@@ -13,7 +13,7 @@ export default function LayoutShell({ children }: { children: ReactNode }) {
 
     useEffect(() => {
         if (!isAdmin) {
-            trafficApi.track(pathname).catch(() => {});
+            void trafficApi.track(pathname);
         }
     }, [pathname, isAdmin]);
 

@@ -6,6 +6,7 @@ import com.xoana.repository.SiteSettingsRepository;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
+import jakarta.validation.Valid;
 
 @RestController
 @RequestMapping("/api/settings")
@@ -26,7 +27,7 @@ public class SiteSettingsController {
 
     @PutMapping
     @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<ApiResponse<SiteSettings>> updateSettings(@RequestBody SiteSettings settings) {
+    public ResponseEntity<ApiResponse<SiteSettings>> updateSettings(@Valid @RequestBody SiteSettings settings) {
         settings.setId(1L);
         SiteSettings saved = siteSettingsRepository.save(settings);
         return ResponseEntity.ok(ApiResponse.success("设置已保存", saved));

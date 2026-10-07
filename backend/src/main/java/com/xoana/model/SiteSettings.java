@@ -2,6 +2,9 @@ package com.xoana.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import java.util.List;
 
 @Entity
 @Table(name = "site_settings")
@@ -57,6 +60,12 @@ public class SiteSettings {
     private String brandImage = "";
 
     // Gallery
+    // null keeps legacy/default images; [] explicitly clears the gallery.
+    @Valid
+    @Convert(converter = GalleryImagesConverter.class)
+    @Column(columnDefinition = "LONGTEXT")
+    private List<@NotNull GalleryImage> galleryImages;
+
     @Column(length = 500)
     private String galleryImage1 = "";
 

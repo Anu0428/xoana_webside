@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { trafficApi } from '@/lib/api';
 import { BarChart3, Users, Eye, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { QueryFeedback } from '@/components/ui/query-feedback';
 
 export default function AdminTrafficPage() {
-    const { data, isLoading } = useQuery({
+    const { data, isLoading, isError, refetch } = useQuery({
         queryKey: ['traffic-stats-30'],
         queryFn: () => trafficApi.getStats(30),
     });
@@ -22,9 +23,11 @@ export default function AdminTrafficPage() {
         );
     }
 
-    const stats = data?.data?.data || {};
-    const topPages: [string, number][] = stats.topPages || [];
-    const dailyVisits: [string, number][] = stats.dailyVisits || [];
+    if (isError) return <QueryFeedback pending={false} error retry={() => { void refetch(); }} />;
+    const stats = data?.data?.data;
+    const topPages = stats?.topPages || [];
+    const dailyVisits = stats?.dailyVisits || [];
+    const maxDailyVisits = Math.max(1, ...dailyVisits.map(([, count]) => count));
 
     return (
         <div>
@@ -35,9 +38,9 @@ export default function AdminTrafficPage() {
 
             <div className="mb-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
                 {[
-                    { label: '总访问量', value: stats.totalVisits ?? 0, icon: Eye },
-                    { label: '总用户数', value: stats.totalUsers ?? 0, icon: Users },
-                    { label: '总订单数', value: stats.totalOrders ?? 0, icon: TrendingUp },
+                    { label: '总访问量', value: stats?.totalVisits ?? 0, icon: Eye },
+                    { label: '总用户数', value: stats?.totalUsers ?? 0, icon: Users },
+                    { label: '总订单数', value: stats?.totalOrders ?? 0, icon: TrendingUp },
                     { label: '页面种类', value: topPages.length || 0, icon: BarChart3 },
                 ].map((card, i) => (
                     <motion.div key={i} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.1 }}
@@ -86,7 +89,7 @@ export default function AdminTrafficPage() {
                                 <div key={i} className="flex items-center gap-3">
                                     <span className="w-24 text-xs text-zinc-500">{String(date)}</span>
                                     <div className="h-2 flex-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
-                                        <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, (count / Math.max(...dailyVisits.map(d => d[1]))) * 100)}%` }} />
+                                        <div className="h-full rounded-full bg-blue-500" style={{ width: `${Math.min(100, (count / maxDailyVisits) * 100)}%` }} />
                                     </div>
                                     <span className="text-xs font-medium text-zinc-500 w-8 text-right">{count}</span>
                                 </div>

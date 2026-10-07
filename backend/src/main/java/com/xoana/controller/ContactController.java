@@ -1,15 +1,14 @@
 package com.xoana.controller;
 
 import com.xoana.dto.ApiResponse;
+import com.xoana.dto.ContactRequest;
 import com.xoana.model.ContactMessage;
 import com.xoana.repository.ContactMessageRepository;
+import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/api/contact")
@@ -22,17 +21,10 @@ public class ContactController {
     }
 
     @PostMapping
-    public ResponseEntity<ApiResponse<ContactMessage>> submitMessage(@RequestBody Map<String, String> body) {
-        String name = body.getOrDefault("name", "").trim();
-        String email = body.getOrDefault("email", "").trim();
-        String message = body.getOrDefault("message", "").trim();
-
-        if (name.isEmpty() || email.isEmpty() || message.isEmpty()) {
-            return ResponseEntity.badRequest().body(ApiResponse.error("姓名、邮箱和消息不能为空"));
-        }
-
+    public ResponseEntity<ApiResponse<ContactMessage>> submitMessage(@Valid @RequestBody ContactRequest request) {
         ContactMessage saved = contactMessageRepository.save(
-                ContactMessage.builder().name(name).email(email).message(message).build()
+                ContactMessage.builder().name(request.name().trim()).email(request.email().trim())
+                        .message(request.message().trim()).build()
         );
         return ResponseEntity.ok(ApiResponse.success("消息已发送", saved));
     }
@@ -43,7 +35,7 @@ public class ContactController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
         Page<ContactMessage> messages = contactMessageRepository.findAllByOrderByCreatedAtDesc(
-                PageRequest.of(page, size));
+                Pagination.of(page, size));
         return ResponseEntity.ok(ApiResponse.success(messages));
     }
 

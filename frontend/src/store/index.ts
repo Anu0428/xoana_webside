@@ -59,7 +59,7 @@ export const useStore = create<AppState>()(
         if (existing) {
           set({
             cart: cart.map((i) =>
-              i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i
+              i.id === item.id ? { ...i, ...item, quantity: i.quantity + item.quantity } : i
             ),
           });
         } else {

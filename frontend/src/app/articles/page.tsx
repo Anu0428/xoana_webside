@@ -1,38 +1,29 @@
 'use client';
 
-import { useTranslations } from 'next-intl';
+import { galleryImageUrl } from '@/lib/gallery';
+
+import { useLocale, useTranslations } from 'next-intl';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { articleApi } from '@/lib/api';
 import Link from 'next/link';
 import { Clock, Eye, ArrowRight } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDate } from '@/lib/utils';
-
-interface Article {
-  id: number;
-  title: string;
-  summary?: string;
-  coverImage?: string;
-  createdAt: string;
-  viewCount: number;
-  author?: string;
-  category?: string;
-  content?: string;
-}
-
-const MOCK_ARTICLES: Article[] = [
-];
+import { Pagination } from '@/components/ui/pagination';
+import { QueryFeedback } from '@/components/ui/query-feedback';
 
 export default function ArticlesPage() {
   const t = useTranslations('articles');
+  const locale = useLocale();
+  const [page, setPage] = useState(0);
 
-  const { data } = useQuery({
-    queryKey: ['articles'],
-    queryFn: () => articleApi.getAll({ page: 0, size: 20 }),
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['articles', page],
+    queryFn: () => articleApi.getAll({ page, size: 20 }),
   });
 
-  const serverArticles: Article[] = data?.data?.data?.content || [];
-  const articles = serverArticles.length > 0 ? serverArticles : MOCK_ARTICLES;
+  const articles = data?.data.data.content || [];
 
   return (
     <div className="bg-white dark:bg-zinc-950">
@@ -42,8 +33,13 @@ export default function ArticlesPage() {
           <p className="mt-2 text-zinc-500 dark:text-zinc-400">{t('subtitle')}</p>
         </div>
 
+        <QueryFeedback pending={isPending} error={isError} retry={() => { void refetch(); }} />
+        {!isPending && !isError && articles.length === 0 && <p className="py-16 text-center text-zinc-400">{t('noArticles')}</p>}
         <div className="space-y-8">
-          {articles.map((article, i) => (
+          {articles.map((article, i) => {
+            const title = locale === 'en' ? article.titleEn || article.title : article.title;
+            const summary = locale === 'en' ? article.summaryEn || article.summary : article.summary;
+            return (
             <motion.article
               key={article.id}
               initial={{ opacity: 0, y: 20 }}
@@ -53,13 +49,13 @@ export default function ArticlesPage() {
             >
               <div className="h-48 w-full shrink-0 bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-900 sm:h-auto sm:w-64">
                 {article.coverImage ? (
-                  <img src={article.coverImage} alt={article.title} className="h-full w-full object-cover" />
+                  <img src={galleryImageUrl(article.coverImage)} alt={title} className="h-full w-full object-cover" />
                 ) : (
                   <div className="flex h-full min-h-[120px] items-center justify-center">
                     <div
                       className="h-16 w-16 rounded-2xl bg-gradient-to-br opacity-50"
                       style={{
-                        background: `linear-gradient(135deg, hsl(${i * 40 + 250}, 70%, 60%), hsl(${i * 40 + 280}, 70%, 50%))`,
+                        background: `linear-gradient(135deg, hsl(42, 58%, ${Math.max(48, 68 - i * 4)}%), hsl(35, 52%, ${Math.max(30, 48 - i * 3)}%))`,
                       }}
                     />
                   </div>
@@ -74,10 +70,10 @@ export default function ArticlesPage() {
                 )}
 
                 <h2 className="text-xl font-semibold text-zinc-900 transition-colors group-hover:text-violet-600 dark:text-white dark:group-hover:text-violet-400">
-                  {article.title}
+                  {title}
                 </h2>
 
-                {article.summary && <p className="mt-2 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">{article.summary}</p>}
+                {summary && <p className="mt-2 line-clamp-2 text-sm text-zinc-500 dark:text-zinc-400">{summary}</p>}
 
                 <div className="mt-auto flex items-center justify-between pt-4">
                   <div className="flex items-center gap-4 text-xs text-zinc-400">
@@ -100,8 +96,9 @@ export default function ArticlesPage() {
                 </div>
               </div>
             </motion.article>
-          ))}
+          ); })}
         </div>
+        <Pagination page={page} totalPages={data?.data.data.totalPages ?? 0} onChange={setPage} disabled={isPending} />
       </main>
     </div>
   );

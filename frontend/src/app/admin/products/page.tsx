@@ -2,10 +2,16 @@
 
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { isAxiosError } from 'axios';
 import { productApi, uploadApi } from '@/lib/api';
 import { formatPrice } from '@/lib/utils';
-import { Plus, Edit, Trash2, X, Upload, Download, Upload as UploadIcon, ChevronDown } from 'lucide-react';
+import { Plus, Edit, Trash2, X, Upload, Download, Upload as UploadIcon, ChevronDown, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { ProductImagePreview } from '@/components/admin/ProductImagePreview';
+import type { Product } from '@/types/models';
+import { Pagination } from '@/components/ui/pagination';
+import { QueryFeedback } from '@/components/ui/query-feedback';
+import { galleryImageUrl } from '@/lib/gallery';
 
 interface ProductForm {
   name: string;
@@ -39,29 +45,60 @@ export default function AdminProductsPage() {
   const [form, setForm] = useState<ProductForm>(defaultForm);
   const [uploading, setUploading] = useState(false);
   const [isCategoryDropdownOpen, setIsCategoryDropdownOpen] = useState(false);
+  const [deleteFeedback, setDeleteFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [page, setPage] = useState(0);
 
-  const { data } = useQuery({
-    queryKey: ['admin-products'],
+  const { data, isPending, isError, refetch } = useQuery({
+    queryKey: ['admin-products', page],
     queryFn: async () => {
-      const res = await productApi.getAllForAdmin({ page: 0, size: 100 });
+      const res = await productApi.getAllForAdmin({ page, size: 20 });
       return res.data;
     },
   });
 
-  const products = Array.isArray(data?.content) ? data.content : (Array.isArray(data?.data?.content) ? data.data.content : []);
+  const products = data?.data.content || [];
 
 
   const createMutation = useMutation({
     mutationFn: (data: unknown) => editId ? productApi.update(editId, data) : productApi.create(data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['admin-products'] }); setShowForm(false); setForm(defaultForm); setEditId(null); },
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['admin-products'] });
+      void qc.invalidateQueries({ queryKey: ['products'] });
+      void qc.invalidateQueries({ queryKey: ['featured-products'] });
+      void qc.invalidateQueries({ queryKey: ['product'] });
+      setShowForm(false); setForm(defaultForm); setEditId(null);
+    },
   });
 
   const deleteMutation = useMutation({
-    mutationFn: productApi.delete,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-products'] }),
+    mutationFn: (product: Product) => productApi.delete(product.id),
+    onMutate: () => setDeleteFeedback(null),
+    onSuccess: async (_, product) => {
+      if (products.length === 1 && page > 0) setPage(page - 1);
+      qc.removeQueries({ queryKey: ['product', product.id], exact: true });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['admin-products'] }),
+        qc.invalidateQueries({ queryKey: ['products'] }),
+        qc.invalidateQueries({ queryKey: ['featured-products'] }),
+        qc.invalidateQueries({ queryKey: ['admin-stats'] }),
+      ]);
+      setDeleteFeedback({ type: 'success', message: `已删除产品“${product.name}”（#${product.id}）。` });
+    },
+    onError: (error, product) => {
+      const responseMessage = isAxiosError(error) ? error.response?.data?.message : undefined;
+      const message = typeof responseMessage === 'string' ? responseMessage : '请稍后重试';
+      setDeleteFeedback({ type: 'error', message: `删除产品“${product.name}”（#${product.id}）失败：${message}` });
+    },
   });
 
-  const handleEdit = (product: any) => {
+  const handleDelete = (product: Product) => {
+    if (deleteMutation.isPending) return;
+    if (confirm(`确认删除产品“${product.name}”（#${product.id}）？删除后将从产品管理和商城中移除，历史订单仍会保留。`)) {
+      deleteMutation.mutate(product);
+    }
+  };
+
+  const handleEdit = (product: Product) => {
     setEditId(product.id);
     setForm({ name: product.name, nameEn: product.nameEn || '', price: String(product.price), stock: String(product.stock), category: product.category || '', description: product.description || '', descriptionEn: product.descriptionEn || '', material: product.material || '', dimensions: product.dimensions || '', coverImage: product.coverImage || '', featured: product.featured, active: product.active });
     setShowForm(true);
@@ -78,29 +115,21 @@ export default function AdminProductsPage() {
     setUploading(true);
     try {
       const res = await uploadApi.uploadImage(file);
-      let imageUrl = res.data?.data || '';
-
-      if (imageUrl.startsWith('/uploads/')) {
-        const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8080';
-        imageUrl = API_BASE_URL + imageUrl;
-      }
+      const imageUrl = galleryImageUrl(res.data.data);
 
       setForm(f => ({ ...f, coverImage: imageUrl }));
-    } catch (err: any) {
-      const message = err.response?.data?.message || err.response?.data?.error || '上传失败';
+    } catch (err) {
+      const response = isAxiosError(err) ? err.response : undefined;
+      const message = response?.data?.message || response?.data?.error || '上传失败';
       alert(message);
 
-      if (err.response?.status === 403) {
-        localStorage.removeItem('xoana-store');
-        window.location.href = '/login';
-      }
     } finally {
       setUploading(false);
     }
   };
 
   const handleExport = () => {
-    const exportData = products.map((p: any) => ({
+    const exportData = products.map((p) => ({
       id: p.id,
       name: p.name,
       nameEn: p.nameEn,
@@ -192,7 +221,7 @@ export default function AdminProductsPage() {
                 className="flex items-center gap-2 rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
             >
               <Download className="h-4 w-4" />
-              导出产品
+              导出本页产品
             </button>
             <button
                 onClick={handleImport}
@@ -210,29 +239,59 @@ export default function AdminProductsPage() {
           </div>
         </div>
 
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm dark:bg-zinc-900">
-          <table className="w-full text-sm">
+        {deleteFeedback && (
+          <p
+            role={deleteFeedback.type === 'error' ? 'alert' : 'status'}
+            className={`mb-4 rounded-xl px-4 py-3 text-sm ${deleteFeedback.type === 'error'
+              ? 'bg-red-50 text-red-700 dark:bg-red-950/30 dark:text-red-300'
+              : 'bg-green-50 text-green-700 dark:bg-green-950/30 dark:text-green-300'}`}
+          >
+            {deleteFeedback.message}
+          </p>
+        )}
+        <QueryFeedback pending={isPending} error={isError} retry={() => { void refetch(); }} />
+        {createMutation.isError && <p role="alert" className="mb-4 text-sm text-red-600">保存产品失败，修改仍保留，请重试。</p>}
+
+        <div className="overflow-x-auto rounded-2xl bg-white shadow-sm dark:bg-zinc-900">
+          <table className="w-full min-w-[720px] text-sm">
             <thead>
             <tr className="border-b border-zinc-100 dark:border-zinc-800">
-              {['产品名', '价格', '库存', '分类', '状态', '操作'].map(h => (
+              {['产品', '价格', '库存', '分类', '状态', '操作'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-medium text-zinc-500">{h}</th>
               ))}
             </tr>
             </thead>
             <tbody>
-            {products.length === 0 ? (
+            {products.length === 0 && !isPending && !isError ? (
                 <tr><td colSpan={6} className="py-12 text-center text-zinc-400">暂无产品，点击上方按钮添加</td></tr>
-            ) : products.map((p: any) => (
+            ) : products.map((p) => (
                 <tr key={p.id} className="border-b border-zinc-50 dark:border-zinc-800/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-white">{p.name}</td>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <ProductImagePreview src={p.coverImage || p.images?.[0]} name={p.name} productId={p.id} />
+                      <div className="min-w-0">
+                        <p className="break-words font-medium text-zinc-900 dark:text-white">{p.name}</p>
+                        <p className="mt-1 text-xs text-zinc-400">#{p.id}</p>
+                      </div>
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-zinc-700 dark:text-zinc-300">{formatPrice(p.price)}</td>
                   <td className="px-4 py-3"><span className={p.stock > 0 ? 'text-green-600' : 'text-red-500'}>{p.stock}</span></td>
                   <td className="px-4 py-3 text-zinc-500">{p.category}</td>
                   <td className="px-4 py-3"><span className={`rounded-full px-2 py-0.5 text-xs ${p.active ? 'bg-green-100 text-green-700' : 'bg-zinc-100 text-zinc-500'}`}>{p.active ? '上架' : '下架'}</span></td>
                   <td className="px-4 py-3">
                     <div className="flex gap-2">
-                      <button onClick={() => handleEdit(p)} className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Edit className="h-4 w-4" /></button>
-                      <button onClick={() => { if (confirm('确认删除？')) deleteMutation.mutate(p.id); }} className="rounded-lg p-1.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20"><Trash2 className="h-4 w-4" /></button>
+                      <button aria-label={`编辑 ${p.name}`} onClick={() => handleEdit(p)} className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"><Edit className="h-4 w-4" /></button>
+                      <button
+                        aria-label={deleteMutation.isPending && deleteMutation.variables?.id === p.id ? `正在删除 ${p.name}` : `删除 ${p.name}`}
+                        disabled={deleteMutation.isPending}
+                        onClick={() => handleDelete(p)}
+                        className="flex items-center gap-1 rounded-lg p-1.5 text-red-400 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:hover:bg-red-900/20"
+                      >
+                        {deleteMutation.isPending && deleteMutation.variables?.id === p.id
+                          ? <><Loader2 className="h-4 w-4 animate-spin" /><span className="whitespace-nowrap text-xs">删除中...</span></>
+                          : <Trash2 className="h-4 w-4" />}
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -241,14 +300,24 @@ export default function AdminProductsPage() {
           </table>
         </div>
 
+        <Pagination page={page} totalPages={data?.data.totalPages ?? 0} onChange={setPage} disabled={isPending} />
         <AnimatePresence>
           {showForm && (
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
                 <motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.9 }} className="w-full max-w-2xl overflow-auto rounded-3xl bg-white p-8 shadow-2xl dark:bg-zinc-900" style={{ maxHeight: '90vh' }}>
                   <div className="mb-6 flex items-center justify-between">
                     <h2 className="text-xl font-bold text-zinc-900 dark:text-white">{editId ? '编辑产品' : '添加产品'}</h2>
-                    <button onClick={() => setShowForm(false)}><X className="h-5 w-5 text-zinc-500" /></button>
+                    <button aria-label="关闭产品表单" onClick={() => setShowForm(false)}><X className="h-5 w-5 text-zinc-500" /></button>
                   </div>
+                  {editId !== null && (
+                    <div className="mb-6 flex items-center gap-3 rounded-xl bg-zinc-50 p-3 dark:bg-zinc-800">
+                      <ProductImagePreview src={form.coverImage || products.find(product => product.id === editId)?.images?.[0]} name={form.name || '当前产品'} productId={editId} />
+                      <div className="min-w-0">
+                        <p className="break-words font-medium text-zinc-900 dark:text-white">{form.name || '未命名产品'}</p>
+                        <p className="mt-1 text-xs text-zinc-500">正在编辑产品 #{editId}</p>
+                      </div>
+                    </div>
+                  )}
                   <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4">
                     {[
                       { key: 'name', label: '产品名（中文）', required: true },
@@ -259,8 +328,8 @@ export default function AdminProductsPage() {
                       { key: 'dimensions', label: '尺寸' },
                     ].map(f => (
                         <div key={f.key} className={f.key === 'name' || f.key === 'nameEn' ? 'col-span-1' : 'col-span-1'}>
-                          <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{f.label}</label>
-                          <input type={f.type || 'text'} required={f.required} value={form[f.key as keyof ProductForm] as string}
+                          <label htmlFor={`product-${f.key}`} className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">{f.label}</label>
+                          <input id={`product-${f.key}`} type={f.type || 'text'} required={f.required} value={form[f.key as keyof ProductForm] as string}
                                  onChange={e => setForm(prev => ({ ...prev, [f.key]: e.target.value }))}
                                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white" />
                         </div>
@@ -330,16 +399,21 @@ export default function AdminProductsPage() {
                     </div>
                     <div className="col-span-2">
                       <label className="mb-1 block text-sm font-medium text-zinc-700 dark:text-zinc-300">封面图</label>
-                      <div className="flex gap-2">
-                        <input value={form.coverImage} onChange={e => setForm(f => ({ ...f, coverImage: e.target.value }))} placeholder="图片 URL" className="flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white" />
-                        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-zinc-200 px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300">
+                      <div className="flex flex-wrap items-center gap-3 rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
+                        <ProductImagePreview src={form.coverImage || products.find(product => product.id === editId)?.images?.[0]} name={form.name.trim() || '未命名产品'} productId={editId ?? undefined} className="h-24 w-24" />
+                        <div className="min-w-0 flex-1">
+                          <p className="break-words font-medium text-zinc-900 dark:text-white">{form.name.trim() || '请先填写产品名称'}</p>
+                          <p className="mt-1 text-xs text-zinc-500">封面预览</p>
+                        </div>
+                        <label className="flex w-full shrink-0 cursor-pointer items-center justify-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 sm:w-auto">
                           <Upload className="h-4 w-4" /> {uploading ? '上传中...' : '上传'}
                           <input type="file" accept="image/*" onChange={handleCoverUpload} className="hidden" />
                         </label>
                       </div>
-                      {form.coverImage && (
-                          <img src={form.coverImage} alt="cover" className="mt-2 h-20 w-auto rounded-lg object-cover" onError={e => { (e.target as HTMLImageElement).style.display = 'none'; }} />
-                      )}
+                      <details className="mt-2 text-sm text-zinc-500">
+                        <summary className="cursor-pointer">手动设置图片链接</summary>
+                        <input aria-label="封面图片链接" value={form.coverImage} onChange={e => setForm(f => ({ ...f, coverImage: e.target.value }))} placeholder="图片 URL" className="mt-2 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 focus:border-violet-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-800 dark:text-white" />
+                      </details>
                     </div>
                     <div className="col-span-2 flex items-center gap-6">
                       <label className="flex items-center gap-2 text-sm">

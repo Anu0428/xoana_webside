@@ -10,5 +10,4 @@ import java.util.List;
 public interface ArticleRepository extends JpaRepository<Article, Long> {
     Page<Article> findByPublishedTrue(Pageable pageable);
     List<Article> findTop5ByPublishedTrueOrderByCreatedAtDesc();
-    Page<Article> findByCategoryAndPublishedTrue(String category, Pageable pageable);
 }

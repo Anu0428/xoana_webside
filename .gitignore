@@ -1,5 +1,6 @@
 # Backend
 backend/target/
+backend/backups/
 backend/.mvn/
 backend/*.iml
 backend/.idea/

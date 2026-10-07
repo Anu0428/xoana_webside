@@ -1,51 +1,28 @@
 'use client';
 
+import { galleryImageUrl } from '@/lib/gallery';
+
 import { useParams, useRouter } from 'next/navigation';
 import { useQuery } from '@tanstack/react-query';
-import { articleApi, settingsApi } from '@/lib/api';
-import { useTranslations } from 'next-intl';
+import { articleApi } from '@/lib/api';
 import { Clock, Eye, ArrowLeft } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { formatDate } from '@/lib/utils';
 import { useLocale } from 'next-intl';
 
-const MOCK_ARTICLES: Record<
-    number,
-    {
-        id: number;
-        title: string;
-        content: string;
-        createdAt: string;
-        viewCount: number;
-        author: string;
-        category: string;
-        coverImage?: string;
-    }
-> = {
-
-};
-
 export default function ArticleDetailPage() {
-    const params = useParams();
+    const params = useParams<{ id: string }>();
     const router = useRouter();
     const locale = useLocale();
-    const t = useTranslations('articles');
     const id = Number(params.id);
-
-    // Pre-warm the settings cache (shared with other components)
-    useQuery({
-        queryKey: ['site-settings'],
-        queryFn: () => settingsApi.get(),
-        staleTime: 5 * 60 * 1000,
-    });
 
     const { data, isLoading, error } = useQuery({
         queryKey: ['article', id],
         queryFn: () => articleApi.getById(id),
-        enabled: !isNaN(id),
+        enabled: Number.isSafeInteger(id) && id > 0,
     });
 
-    const article = data?.data?.data || MOCK_ARTICLES[id] || MOCK_ARTICLES[1];
+    const article = data?.data?.data;
 
     // 处理加载状态
     if (isLoading) {
@@ -88,8 +65,7 @@ export default function ArticleDetailPage() {
     // 根据语言环境选择显示中文还是英文内容
     const isEnglish = locale === 'en';
     const displayTitle = isEnglish ? (article.titleEn || article.title) : article.title;
-    const displayContent = isEnglish ? (article.contentEn || article.content) : article.content;
-    const displaySummary = isEnglish ? (article.summaryEn || article.summary) : article.summary;
+    const displayContent = (isEnglish ? (article.contentEn || article.content) : article.content) || '';
 
     return (
         <div className="bg-white dark:bg-zinc-950">
@@ -124,7 +100,7 @@ export default function ArticleDetailPage() {
 
                     {article.coverImage && (
                         <div className="mt-8 overflow-hidden rounded-2xl">
-                            <img src={article.coverImage} alt={displayTitle} className="w-full object-cover" />
+                            <img src={galleryImageUrl(article.coverImage)} alt={displayTitle} className="w-full object-cover" />
                         </div>
                     )}
 

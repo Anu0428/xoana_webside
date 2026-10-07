@@ -77,7 +77,11 @@
     "quantity": "数量",
     "inStock": "有货",
     "noProducts": "暂无产品",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "pagination": {
+      "prev": "上一页",
+      "next": "下一页"
+    }
   },
   "articles": {
     "title": "文章",
@@ -134,6 +138,12 @@
     "forgotPassword": "忘记密码？"
   },
   "profile": {
+    "continuePayment": "继续付款",
+    "paying": "支付中...",
+    "testPayment": "测试支付",
+    "paymentSucceeded": "支付已完成。",
+    "paymentFailed": "支付失败，请重试。",
+    "sessionChanged": "登录状态已改变，请重新登录后查看订单支付结果。",
     "title": "个人中心",
     "orders": "我的订单",
     "settings": "个人设置",
@@ -176,6 +186,7 @@
     "inactive": "禁用"
   },
   "common": {
+    "pagination": "分页",
     "loading": "加载中...",
     "error": "出错了",
     "retry": "重试",

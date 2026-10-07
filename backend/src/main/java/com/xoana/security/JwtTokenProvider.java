@@ -2,11 +2,14 @@ package com.xoana.security;
 
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -15,15 +18,30 @@ import java.util.function.Function;
 @Component
 public class JwtTokenProvider {
 
-    @Value("${app.jwt.secret}")
-    private String jwtSecret;
+    private static final Logger log = LoggerFactory.getLogger(JwtTokenProvider.class);
+    private static final String LEGACY_PUBLIC_SECRET =
+            "xoanaSecretKey2024VeryLongSecretKeyForJWTSigningThatIsAtLeast256BitsLong";
 
-    @Value("${app.jwt.expiration}")
-    private long jwtExpiration;
+    private final Key signingKey;
+    private final long jwtExpiration;
+
+    public JwtTokenProvider(@Value("${app.jwt.secret:}") String jwtSecret,
+                            @Value("${app.jwt.expiration}") long jwtExpiration) {
+        this.jwtExpiration = jwtExpiration;
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            signingKey = Keys.secretKeyFor(SignatureAlgorithm.HS256);
+            log.warn("APP_JWT_SECRET is unset; using a random signing key for this process. "
+                    + "Sessions expire on restart. Set a secure shared secret for persistent or multi-instance deployments.");
+        } else {
+            if (jwtSecret.equals(LEGACY_PUBLIC_SECRET)) {
+                throw new IllegalArgumentException("The previously published JWT signing secret is insecure; configure APP_JWT_SECRET");
+            }
+            signingKey = Keys.hmacShaKeyFor(jwtSecret.getBytes(StandardCharsets.UTF_8));
+        }
+    }
 
     private Key getSigningKey() {
-        byte[] keyBytes = jwtSecret.getBytes();
-        return Keys.hmacShaKeyFor(keyBytes);
+        return signingKey;
     }
 
     public String generateToken(UserDetails userDetails) {
@@ -67,7 +85,8 @@ public class JwtTokenProvider {
     }
 
     private Boolean isTokenExpired(String token) {
-        return extractExpiration(token).before(new Date());
+        Date expiration = extractExpiration(token);
+        return expiration == null || !expiration.after(new Date());
     }
 
     public Boolean validateToken(String token, UserDetails userDetails) {

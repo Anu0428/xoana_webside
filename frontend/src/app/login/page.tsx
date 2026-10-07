@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { useStore } from '@/store';
-import { authApi } from '@/lib/api';
+import { authApi, getApiErrorMessage } from '@/lib/api';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -20,15 +20,17 @@ export default function LoginPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setError('');
     try {
       const res = await authApi.login(form);
+      if (!res.data.success || !res.data.data?.token) throw new Error('Invalid authentication response');
       const { token, ...user } = res.data.data;
       setAuth(user, token);
       router.push(user.role === 'ADMIN' ? '/admin' : '/');
-    } catch (err: any) {
-      setError(err.response?.data?.message || '登录失败，请检查用户名和密码');
+    } catch (err) {
+      setError(getApiErrorMessage(err, '登录失败，请检查用户名和密码'));
     } finally {
       setLoading(false);
     }
